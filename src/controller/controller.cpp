@@ -23,8 +23,8 @@ const uint16_t udpPort = 4210;
 // POTENTIOMETER PIN
 const int POT_PIN = 32;
 // JOYSTICKS
-Joystick upperJoystick(34, 35);
-Joystick lowerJoystick(36, 39);
+Joystick upperJoystick(35, 34);
+Joystick lowerJoystick(39, 36);
 WiFiUDP udp;
 // Timing
 unsigned long lastSend = 0;
