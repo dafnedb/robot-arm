@@ -1,31 +1,29 @@
 /**
  * ==============================================================
  *  Remote Control for MTDs Robot - ESP32 Joystick Controller
- * ==============================================================
+ ==============================================================
  *  Dispositive: ESP32
  * Description:
- *  This code implements a remote control system for the MTDs robot using an ESP32 microcontroller.
- * It reads two analog joysticks and a potentiometer to control the speed and direction of a surgery simulation robot.
- * The processed data is sent via UDP to the robot at a frequency of 50 Hz.
- * ==============================================================
+ * This code implements a remote control system for a robot using an ESP32 microcontroller.
+ * It reads input from two joysticks and a potentiometer, constructs a data packet, and sends it to the robot using ESP-NOW wireless communication.
+ *
+ =============================================================
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiUdp.h>
+#include <esp_now.h>
 #include "Joystick.h"
 
-// CONNECTION SETTINGS
-const char *ssid = "MTDS_ROBOT_AP";
-const char *password = "robotseguro";
-const char *udpAddress = "192.168.4.1";
-const uint16_t udpPort = 4210;
-// POTENTIOMETER PIN
+// Receiver MAC Address (replace with your robot's MAC address)
+uint8_t receiverAddress[] = {0xA4, 0xF0, 0x0F, 0x69, 0xBB, 0xBC};
+
+// Potentiometer pin definition
 const int POT_PIN = 32;
-// JOYSTICKS
+// Joystick definitions (connected to ADC pins)
 Joystick upperJoystick(35, 34);
 Joystick lowerJoystick(39, 36);
-WiFiUDP udp;
+
 // Timing
 unsigned long lastSend = 0;
 const unsigned long SEND_INTERVAL = 20; // 20 ms → 50 Hz
@@ -53,15 +51,14 @@ typedef struct __attribute__((packed))
 // Static assertion to ensure the struct size is exactly 9 bytes (4 int16_t + 1 uint8_t)
 static_assert(sizeof(DataPacket) == 9, "DataPacket struct size must be exactly 9 bytes");
 
+esp_now_peer_info_t peerInfo;
+
 // =======================================================
 // FUNCTIONS
 // =======================================================
 
 /**
- *  Sends the processed joystick and potentiometer data via UDP.
- *  The data is sent in a binary format to minimize overhead and latency.
- *  The packet size is fixed at 9 bytes (4 int16_t + 1 uint8_t).
- *
+ * sendData() - Reads the current state of the joysticks and potentiometer, constructs a data packet, and sends it to the robot using ESP-NOW.
  */
 
 void sendData()
@@ -72,7 +69,7 @@ void sendData()
 
   // Potentiometer reading
   int rawPot = analogRead(POT_PIN);
-  int potValue = map(rawPot, 0, 4095, 0, 180); // Map to 0-180 range
+  int potValue = map(rawPot, 0, 4095, 0, 180); // Map directly to 0-180 range
 
   // Create data packet
   DataPacket packet;
@@ -82,33 +79,22 @@ void sendData()
   packet.joy2Y = (int16_t)lowerJoystickPos.y;
   packet.pot = (uint8_t)potValue;
 
-  // UPD transmission
-  udp.beginPacket(udpAddress, udpPort);
-  udp.write((uint8_t *)&packet, sizeof(packet));
-  udp.endPacket();
+  esp_err_t result = esp_now_send(receiverAddress, (uint8_t *)&packet, sizeof(packet));
 
-  // Debugging output
-  Serial.printf("Enviado -> vx1:%d vy1:%d vx2:%d vy2:%d POT:%d\n", upperJoystickPos.x, upperJoystickPos.y, lowerJoystickPos.x, lowerJoystickPos.y, potValue);
-}
-
-/**
- * Verify WiFi connection and attempt reconnection if lost. This function checks the connection status and, if disconnected, it will try to reconnect to the WiFi network. It also includes a small delay to avoid rapid reconnection attempts.
- */
-
-void verifyConnection()
-{
-  if (WiFi.status() != WL_CONNECTED)
+  if (result == ESP_OK)
   {
-    Serial.println("WiFi perdido, reconectando...");
-    WiFi.disconnect();
-    WiFi.reconnect();
-    delay(500);
+    Serial.printf("Enviando -> vx1:%d vy1:%d vx2:%d vy2:%d POT:%d\n", upperJoystickPos.x, upperJoystickPos.y, lowerJoystickPos.x, lowerJoystickPos.y, potValue);
+  }
+  else
+  {
+    Serial.printf("Error sending data: %d\n", result);
   }
 }
 
 // SETUP
 void setup()
 {
+  // Begin Serial communication for debugging and having feedback
   Serial.begin(115200);
 
   // Configure ADC for potentiometer reading
@@ -121,27 +107,28 @@ void setup()
   lowerJoystick.calibrate();
   Serial.println("Calibración completa!");
 
-  // Wifi connection
-  Serial.print("Conectando al Robot AP");
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED)
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK)
   {
-    delay(500);
-    Serial.print(".");
-  }
+    Serial.println("Error inicializando ESP-NOW");
+    return;
+  };
 
-  Serial.println("\nConectado!");
-  Serial.print("IP local: ");
-  Serial.println(WiFi.localIP());
-  udp.begin(4211);
+  memcpy(peerInfo.peer_addr, receiverAddress, 6);
+  peerInfo.channel = 0; // use current Wi-Fi channel
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK)
+  {
+    Serial.println("Fallo al emparejar con el receptor");
+    return;
+  }
+  Serial.println("ESP-NOW Iniciado y emparejado.");
 }
 
 // MAIN LOOP
 void loop()
 {
-  verifyConnection();
-
   // Send data at the defined interval
   unsigned long now = millis();
   if (now - lastSend >= SEND_INTERVAL)
