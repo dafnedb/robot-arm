@@ -23,7 +23,7 @@ private:
     int processAxis(int value, int center);
 
 public:
-    Joystick(int pX, int pY, int dz = 150, int speed = 200, float exp = 2.0);
+    Joystick(int pX, int pY, int dz = 30, int speed = 200, float exp = 2.0);
 
     void calibrate();
     JoyPosition readPosition();

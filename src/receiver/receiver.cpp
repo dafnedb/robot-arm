@@ -15,9 +15,10 @@ typedef struct __attribute__((packed))
   int16_t lowerJoyX; // -200 a 200
   int16_t lowerJoyY; // -200 a 200
   uint8_t pot;       // 0 a 255
+  uint8_t reset;     // 0 o 1
 } DataPacket;
 #pragma pack(pop)
-static_assert(sizeof(DataPacket) == 9, "Error Crítico: El struct no mide 9 bytes");
+static_assert(sizeof(DataPacket) == 10, "Error Crítico: El struct no mide 10 bytes");
 
 DataPacket packet;
 
@@ -29,9 +30,9 @@ void OnDataRecv(const uint8_t * mac, const uint8_t * incomingData, int len) {
     // Copy incoming data to our packet struct
     memcpy(&packet, incomingData, sizeof(packet));
     // Send the data to the Mega via UART
-    MegaSerial.printf("<%d,%d,%d,%d,%d>\n", packet.upperJoyX, packet.upperJoyY, packet.lowerJoyX, packet.lowerJoyY, packet.pot);
+    MegaSerial.printf("<%d,%d,%d,%d,%d,%d>\n", packet.upperJoyX, packet.upperJoyY, packet.lowerJoyX, packet.lowerJoyY, packet.pot, packet.reset);
     // Debug output
-    Serial.printf("Recibido -> VX1:%d VY1:%d VX2:%d VY2:%d POT:%d\n", packet.upperJoyX, packet.upperJoyY, packet.lowerJoyX, packet.lowerJoyY, packet.pot);
+    Serial.printf("Recibido -> VX1:%d VY1:%d VX2:%d VY2:%d POT:%d RESET:%d\n", packet.upperJoyX, packet.upperJoyY, packet.lowerJoyX, packet.lowerJoyY, packet.pot, packet.reset);
   }
 }
 

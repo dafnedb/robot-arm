@@ -16,10 +16,14 @@
 #include "Joystick.h"
 
 // Receiver MAC Address (replace with your robot's MAC address)
-uint8_t receiverAddress[] = {0xA4, 0xF0, 0x0F, 0x69, 0xBB, 0xBC};
+// uint8_t receiverAddress[] = {0xA4, 0xF0, 0x0F, 0x69, 0xBB, 0xBC};
+uint8_t receiverAddress[] = {0x84, 0x1F, 0xE8, 0x26, 0x5A, 0x04};
 
 // Potentiometer pin definition
 const int POT_PIN = 32;
+// Joystick Buttons
+const int UP_JOY_BUTTON = 22;  // Button on upper joystick
+const int LOW_JOY_BUTTON = 21; // Button on lower joystick
 // Joystick definitions (connected to ADC pins)
 Joystick upperJoystick(35, 34);
 Joystick lowerJoystick(39, 36);
@@ -45,11 +49,12 @@ typedef struct __attribute__((packed))
   int16_t joy1Y;
   int16_t joy2X;
   int16_t joy2Y;
-  uint8_t pot; // potentiometer value (0-180)
+  uint8_t pot;   // potentiometer value (0-180)
+  uint8_t reset; // reset state (0 or 1)
 } DataPacket;
 #pragma pack(pop)
-// Static assertion to ensure the struct size is exactly 9 bytes (4 int16_t + 1 uint8_t)
-static_assert(sizeof(DataPacket) == 9, "DataPacket struct size must be exactly 9 bytes");
+// Static assertion to ensure the struct size is exactly 10 bytes (4 int16_t + 2 uint8_t)
+static_assert(sizeof(DataPacket) == 10, "DataPacket struct size must be exactly 10 bytes");
 
 esp_now_peer_info_t peerInfo;
 
@@ -68,22 +73,34 @@ void sendData()
   JoyPosition upperJoystickPos = upperJoystick.readPosition();
 
   // Potentiometer reading
-  int rawPot = analogRead(POT_PIN);
-  int potValue = map(rawPot, 0, 4095, 0, 180); // Map directly to 0-180 range
+  // int rawPot = analogRead(POT_PIN);
+  // int potValue = map(rawPot, 0, 4095, 0, 180); // Map directly to 0-180 range
 
+  static int lastValidPot = -1; // Store the last valid potentiometer value to implement a simple noise filter
+  const int POT_THRESHOLD = 3;  // Tolerance: only update if the change is greater than this threshold to avoid noise
+  // Read raw potentiometer value and map it to 0-180 range
+  int rawPot = analogRead(POT_PIN);
+  int currentPot = map(rawPot, 0, 4095, 0, 180);
+  // Check if the change in potentiometer value exceeds the threshold
+  if (lastValidPot == -1 || abs(currentPot - lastValidPot) >= POT_THRESHOLD)
+  {
+    lastValidPot = currentPot;
+  }
+  // Check if both joystick buttons are pressed for reset state
+  bool resetState = ((digitalRead(UP_JOY_BUTTON) == LOW) && (digitalRead(LOW_JOY_BUTTON) == LOW)); 
   // Create data packet
   DataPacket packet;
   packet.joy1X = (int16_t)upperJoystickPos.x;
   packet.joy1Y = (int16_t)upperJoystickPos.y;
   packet.joy2X = (int16_t)lowerJoystickPos.x;
   packet.joy2Y = (int16_t)lowerJoystickPos.y;
-  packet.pot = (uint8_t)potValue;
-
+  packet.pot = (uint8_t)lastValidPot;
+  packet.reset = (uint8_t)resetState;
   esp_err_t result = esp_now_send(receiverAddress, (uint8_t *)&packet, sizeof(packet));
 
   if (result == ESP_OK)
   {
-    Serial.printf("Enviando -> vx1:%d vy1:%d vx2:%d vy2:%d POT:%d\n", upperJoystickPos.x, upperJoystickPos.y, lowerJoystickPos.x, lowerJoystickPos.y, potValue);
+    Serial.printf("Enviando -> vx1:%d vy1:%d vx2:%d vy2:%d POT:%d RESET:%d\n", upperJoystickPos.x, upperJoystickPos.y, lowerJoystickPos.x, lowerJoystickPos.y, lastValidPot, resetState);
   }
   else
   {
@@ -96,6 +113,9 @@ void setup()
 {
   // Begin Serial communication for debugging and having feedback
   Serial.begin(115200);
+  // Configure button pins with pull-up resistors
+  pinMode(UP_JOY_BUTTON, INPUT_PULLUP);
+  pinMode(LOW_JOY_BUTTON, INPUT_PULLUP);
 
   // Configure ADC for potentiometer reading
   analogReadResolution(12);
