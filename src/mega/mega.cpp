@@ -17,6 +17,7 @@
 
 // ===== PIN SENSOR (X-MIN) =====
 #define X_MIN_PIN 3 
+#define Y_MIN_PIN 14 // Pin correspondiente a Y-MIN en RAMPS
 
 // ===== SERVO PINS =====
 const int PIN_PINZA = 11;
@@ -64,6 +65,7 @@ void setup() {
     pinMode(Y_STEP, OUTPUT); pinMode(Y_DIR, OUTPUT); pinMode(Y_EN, OUTPUT);
     pinMode(Z_STEP, OUTPUT); pinMode(Z_DIR, OUTPUT); pinMode(Z_EN, OUTPUT);
     pinMode(X_MIN_PIN, INPUT_PULLUP);
+    pinMode(Y_MIN_PIN, INPUT_PULLUP);
 
 // Disable all stepper drivers at startup
     digitalWrite(X_EN, LOW);
@@ -125,7 +127,7 @@ void loop() {
 
     // 3. LÓGICA DE HOME
     if (resetSignal == 1 && !haciendoHome) {
-        ejecutarHomeVirtualX();
+        ejecutarHomeVirtual();
     }
 
     // 4. MOVIMIENTO MOTORES (Solo si no está haciendo Home)
@@ -136,7 +138,7 @@ void loop() {
     }
 } // <--- AQUÍ TERMINA EL LOOP
 
-void ejecutarHomeVirtualX() {
+void ejecutarHomeVirtual() {
     haciendoHome = true;
     Serial.println("HOME: Iniciando...");
 
@@ -159,7 +161,20 @@ void ejecutarHomeVirtualX() {
         delayMicroseconds(1200);
     }
     
-    posX = 178; 
+    posX = 178;
+    Serial.println("HOME Y: Buscando sensor...");
+    digitalWrite(Y_DIR, LOW); // Asegúrate que LOW sea hacia el sensor
+    while (digitalRead(Y_MIN_PIN) == HIGH) {
+        digitalWrite(Y_STEP, HIGH); delayMicroseconds(1000);
+        digitalWrite(Y_STEP, LOW);  delayMicroseconds(1000);
+    }
+    // Offset Y (Ajusta los pasos según tu mecánica)
+    digitalWrite(Y_DIR, HIGH); 
+    for (int i = 0; i < 200; i++) {
+        digitalWrite(Y_STEP, HIGH); delayMicroseconds(1200);
+        digitalWrite(Y_STEP, LOW);  delayMicroseconds(1200);
+    }
+    posY = 0; // O el valor que defina tu centro
     resetSignal = 0; 
     
     while(Serial1.available() > 0) { Serial1.read(); }
